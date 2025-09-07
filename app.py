@@ -2,6 +2,7 @@ import streamlit as st
 import datetime
 import sqlite3
 import pandas as pd
+import matplotlib.pyplot as plt
 
 # =========================
 # Database Setup
@@ -182,3 +183,25 @@ elif st.session_state.role == "manager":
     st.subheader("📑 Daily Records")
     df = pd.read_sql("SELECT * FROM daily_sales ORDER BY id DESC", conn)
     st.dataframe(df)
+
+    # =========================
+    # 📊 Charts Section
+    # =========================
+    if not df.empty:
+        st.subheader("📈 Sales Charts")
+
+        # Pie chart (نسبة كل كاتيجوري)
+        st.write("### Sales Breakdown (Pie Chart)")
+        categories = ["vape", "international", "australian", "non_tobacco"]
+        values = [df[c].sum() for c in categories]
+
+        fig1, ax1 = plt.subplots()
+        ax1.pie(values, labels=categories, autopct='%1.1f%%', startangle=90)
+        ax1.axis('equal')
+        st.pyplot(fig1)
+
+        # Bar chart (مبيعات حسب الأيام)
+        st.write("### Daily Sales (Bar Chart)")
+        fig2, ax2 = plt.subplots()
+        df.plot(x="date", y=["vape", "international", "australian", "non_tobacco"], kind="bar", ax=ax2)
+        st.pyplot(fig2)
