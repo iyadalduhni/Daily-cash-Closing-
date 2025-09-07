@@ -1,12 +1,12 @@
 import streamlit as st
 import datetime
 import sqlite3
+import pandas as pd
 
 # ====== Database Setup ======
 conn = sqlite3.connect("sales.db")
 c = conn.cursor()
 
-# جدول للمبيعات اليومية
 c.execute('''CREATE TABLE IF NOT EXISTS daily_sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT,
@@ -59,33 +59,3 @@ eftpos_backup = st.number_input("EFTPOS Backup", min_value=0.0, step=1.0)
 
 # المصاريف
 st.header("Expenses")
-expenses = st.number_input("Expenses", min_value=0.0, step=1.0)
-expenses_desc = st.text_input("Expense Description")
-
-# System Sales (من POS)
-system_sales = st.number_input("System Sales (from POS)", min_value=0.0, step=1.0)
-
-# الحسابات
-net_sales = (cash_left_total + safe_total + eftpos_main + eftpos_backup + expenses)
-difference = system_sales - net_sales
-
-# زر الحفظ
-if st.button("💾 Save Data"):
-    c.execute('''INSERT INTO daily_sales 
-        (date, vape, international, australian, non_tobacco, total,
-         cash_notes, cash_coins, safe_notes, safe_coins,
-         eftpos_main, eftpos_backup, expenses, expenses_desc,
-         net_sales, system_sales, difference)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-         (str(date), vape, international, australian, non_tobacco, total_sales,
-          cash_notes, cash_coins, safe_notes, safe_coins,
-          eftpos_main, eftpos_backup, expenses, expenses_desc,
-          net_sales, system_sales, difference))
-    conn.commit()
-    st.success("✅ Data saved successfully!")
-
-# عرض آخر 5 سجلات
-st.subheader("📊 Last Records")
-rows = c.execute("SELECT date, total, net_sales, system_sales, difference FROM daily_sales ORDER BY id DESC LIMIT 5").fetchall()
-for row in rows:
-    st.write(row)
