@@ -30,15 +30,41 @@ c.execute('''CREATE TABLE IF NOT EXISTS daily_sales (
     system_sales REAL,
     difference REAL
 )''')
+
+# جدول المستخدمين
+c.execute('''CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT,
+    role TEXT
+)''')
 conn.commit()
 
+# إضافة مدير افتراضي إذا الجدول فاضي
+c.execute("SELECT COUNT(*) FROM users")
+if c.fetchone()[0] == 0:
+    c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", 
+              ("manager", "admin123", "manager"))
+    conn.commit()
+
 # =========================
-# Users (ممكن تتحول لجدول مستقل لاحقاً)
+# Helper Functions
 # =========================
-users = {
-    "employee1": {"password": "1234", "role": "employee"},
-    "manager": {"password": "admin123", "role": "manager"}
-}
+def check_user(username, password):
+    user = c.execute("SELECT role FROM users WHERE username=? AND password=?", 
+                     (username, password)).fetchone()
+    if user:
+        return user[0]
+    return None
+
+def add_user(username, password, role):
+    try:
+        c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", 
+                  (username, password, role))
+        conn.commit()
+        return True
+    except:
+        return False
 
 # =========================
 # Session State
@@ -57,10 +83,11 @@ if not st.session_state.logged_in:
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        if username in users and users[username]["password"] == password:
+        role = check_user(username, password)
+        if role:
             st.session_state.logged_in = True
-            st.session_state.role = users[username]["role"]
-            st.success(f"Welcome {username} ({st.session_state.role})")
+            st.session_state.role = role
+            st.success(f"Welcome {username} ({role})")
         else:
             st.error("❌ Invalid username or password")
 
@@ -131,7 +158,7 @@ elif st.session_state.role == "employee":
                   net_sales, system_sales, difference))
             conn.commit()
             st.success("✅ Data saved successfully!")
-            st.session_state.page = None  # reset flow
+            st.session_state.page = None
             st.session_state.sales_data = {}
 
 # =========================
@@ -139,5 +166,19 @@ elif st.session_state.role == "employee":
 # =========================
 elif st.session_state.role == "manager":
     st.title("📊 Manager Dashboard")
+
+    # إدارة المستخدمين
+    st.subheader("👥 Manage Users")
+    new_username = st.text_input("New Username")
+    new_password = st.text_input("New Password", type="password")
+    role = st.selectbox("Role", ["employee", "manager"])
+    if st.button("Add User"):
+        if add_user(new_username, new_password, role):
+            st.success(f"User {new_username} added successfully!")
+        else:
+            st.error("⚠️ Username already exists")
+
+    # عرض جميع البيانات
+    st.subheader("📑 Daily Records")
     df = pd.read_sql("SELECT * FROM daily_sales ORDER BY id DESC", conn)
     st.dataframe(df)
