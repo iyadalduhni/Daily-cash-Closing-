@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 conn = sqlite3.connect("sales.db")
 c = conn.cursor()
 
-# جدول للمبيعات اليومية
+# جدول المبيعات اليومية
 c.execute('''CREATE TABLE IF NOT EXISTS daily_sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT,
@@ -195,13 +195,19 @@ elif st.session_state.role == "manager":
         categories = ["vape", "international", "australian", "non_tobacco"]
         values = [df[c].sum() for c in categories]
 
-        fig1, ax1 = plt.subplots()
-        ax1.pie(values, labels=categories, autopct='%1.1f%%', startangle=90)
-        ax1.axis('equal')
-        st.pyplot(fig1)
+        if sum(values) > 0:
+            fig1, ax1 = plt.subplots()
+            ax1.pie(values, labels=categories, autopct='%1.1f%%', startangle=90)
+            ax1.axis('equal')
+            st.pyplot(fig1)
+        else:
+            st.info("⚠️ No sales data available for Pie Chart")
 
         # Bar chart (مبيعات حسب الأيام)
         st.write("### Daily Sales (Bar Chart)")
-        fig2, ax2 = plt.subplots()
-        df.plot(x="date", y=["vape", "international", "australian", "non_tobacco"], kind="bar", ax=ax2)
-        st.pyplot(fig2)
+        if df[["vape", "international", "australian", "non_tobacco"]].sum().sum() > 0:
+            fig2, ax2 = plt.subplots()
+            df.plot(x="date", y=["vape", "international", "australian", "non_tobacco"], kind="bar", ax=ax2)
+            st.pyplot(fig2)
+        else:
+            st.info("⚠️ No sales data available for Bar Chart")
