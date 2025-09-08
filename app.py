@@ -220,20 +220,43 @@ elif st.session_state.role == "manager":
     df = pd.read_sql("SELECT * FROM daily_sales ORDER BY id DESC", conn)
 
     if not df.empty:
-        # إضافة اليوم بجانب التاريخ
-        df["day_name"] = pd.to_datetime(df["date"]).dt.strftime("%A")
+        df["date"] = pd.to_datetime(df["date"])
+        df["week"] = df["date"].dt.isocalendar().week
+        df["year"] = df["date"].dt.isocalendar().year
+        df["day_name"] = df["date"].dt.strftime("%A")
 
-        # عرض فقط التاريخ + اليوم + الاجمالي
-        summary_df = df[["date", "day_name", "total"]]
+        today = datetime.date.today()
+        current_week = today.isocalendar()[1]
+        current_year = today.isocalendar()[0]
 
-        for _, row in summary_df.iterrows():
-            if st.button(f"{row['date']} ({row['day_name']}) - Total: {row['total']}$"):
-                st.session_state.selected_date = row['date']
+        # بيانات الأسبوع الحالي
+        current_df = df[(df["week"] == current_week) & (df["year"] == current_year)]
 
-        # صفحة تفاصيل اليوم
+        st.write(f"### Week {current_week} ({current_year})")
+
+        if not current_df.empty:
+            for _, row in current_df.iterrows():
+                if st.button(f"{row['date'].date()} ({row['day_name']}) - Total: {row['total']}$"):
+                    st.session_state.selected_date = str(row['date'].date())
+        else:
+            st.info("⚠️ No records for this week yet")
+
+        # اختيار أسبوع قديم
+        st.subheader("📅 View Previous Weeks")
+        past_weeks = sorted(df["week"].unique(), reverse=True)
+        selected_week = st.selectbox("Choose a week:", past_weeks)
+
+        past_df = df[df["week"] == selected_week]
+        if not past_df.empty:
+            st.write(f"### Records for Week {selected_week}")
+            for _, row in past_df.iterrows():
+                if st.button(f"{row['date'].date()} ({row['day_name']}) - Total: {row['total']}$", key=row['id']):
+                    st.session_state.selected_date = str(row['date'].date())
+
+        # تفاصيل يوم محدد
         if st.session_state.selected_date:
             st.subheader(f"📅 Details for {st.session_state.selected_date}")
-            details = df[df["date"] == st.session_state.selected_date]
+            details = df[df["date"].dt.strftime("%Y-%m-%d") == st.session_state.selected_date]
             st.dataframe(details)
 
     # =========================
