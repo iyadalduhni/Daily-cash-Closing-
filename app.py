@@ -188,52 +188,59 @@ elif st.session_state.role == "employee":
 elif st.session_state.role == "manager":
     st.title("📊 Manager Dashboard")
 
-    # زر Reset Database
+    # زر Reset Database مع تأكيد
     st.subheader("⚠️ Admin Tools")
-    if st.button("🔄 Reset Database"):
-        with conn:
-            c.execute("DROP TABLE IF EXISTS daily_sales")
-            c.execute("DROP TABLE IF EXISTS users")
+    with st.expander("🔄 Reset Database"):
+        st.warning("⚠️ This will delete ALL data and reset the database. This action cannot be undone.")
+        confirm_text = st.text_input("Type RESET to confirm", key="reset_confirm")
 
-            # إعادة إنشاء الجداول
-            c.execute('''CREATE TABLE IF NOT EXISTS daily_sales (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT,
-                vape REAL,
-                international REAL,
-                australian REAL,
-                non_tobacco REAL,
-                total REAL,
-                cash_notes REAL,
-                cash_coins REAL,
-                safe_notes REAL,
-                safe_coins REAL,
-                eftpos_main REAL,
-                eftpos_backup REAL,
-                expenses REAL,
-                expenses_desc TEXT,
-                net_sales REAL,
-                system_sales REAL,
-                difference REAL,
-                employee_name TEXT,
-                start_time TEXT,
-                end_time TEXT,
-                hours REAL,
-                status TEXT DEFAULT 'Pending'
-            )''')
+        if st.button("Reset Database"):
+            if confirm_text == "RESET":
+                with conn:
+                    c.execute("DROP TABLE IF EXISTS daily_sales")
+                    c.execute("DROP TABLE IF EXISTS users")
 
-            c.execute('''CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE,
-                password TEXT,
-                role TEXT
-            )''')
+                    # إعادة إنشاء الجداول
+                    c.execute('''CREATE TABLE IF NOT EXISTS daily_sales (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        date TEXT,
+                        vape REAL,
+                        international REAL,
+                        australian REAL,
+                        non_tobacco REAL,
+                        total REAL,
+                        cash_notes REAL,
+                        cash_coins REAL,
+                        safe_notes REAL,
+                        safe_coins REAL,
+                        eftpos_main REAL,
+                        eftpos_backup REAL,
+                        expenses REAL,
+                        expenses_desc TEXT,
+                        net_sales REAL,
+                        system_sales REAL,
+                        difference REAL,
+                        employee_name TEXT,
+                        start_time TEXT,
+                        end_time TEXT,
+                        hours REAL,
+                        status TEXT DEFAULT 'Pending'
+                    )''')
 
-            # إضافة مدير افتراضي
-            c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", 
-                      ("manager", "admin123", "manager"))
+                    c.execute('''CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT UNIQUE,
+                        password TEXT,
+                        role TEXT
+                    )''')
 
-        st.success("✅ Database has been reset successfully!")
+                    # إضافة مدير افتراضي
+                    c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", 
+                              ("manager", "admin123", "manager"))
+
+                st.success("✅ Database has been reset successfully!")
+            else:
+                st.error("❌ You must type RESET to confirm.")
 
     # إضافة مستخدم جديد
     if st.button("➕ Add User"):
@@ -255,7 +262,6 @@ elif st.session_state.role == "manager":
     st.subheader("📑 Daily Records")
     df = pd.read_sql("SELECT * FROM daily_sales ORDER BY id DESC", conn)
 
-    # إصلاح: ضمان وجود العمود status
     if "status" not in df.columns:
         df["status"] = "Pending"
 
@@ -282,7 +288,6 @@ elif st.session_state.role == "manager":
         else:
             st.info("⚠️ No records for this week yet")
 
-        # تفاصيل اليوم + Approve
         if st.session_state.selected_date:
             st.subheader(f"📅 Details for {st.session_state.selected_date}")
             details = df[df["date"].dt.strftime("%Y-%m-%d") == st.session_state.selected_date]
@@ -293,11 +298,7 @@ elif st.session_state.role == "manager":
                 conn.commit()
                 st.success("Record approved successfully!")
 
-        # تقرير الساعات الأسبوعية
         st.subheader("📊 Weekly Hours Report")
-        df["week"] = df["date"].dt.isocalendar().week
-        df["year"] = df["date"].dt.isocalendar().year
-
         weekly_hours = df[(df["week"] == current_week) & 
                           (df["year"] == current_year) & 
                           (df["status"] == "Approved")]
@@ -309,7 +310,6 @@ elif st.session_state.role == "manager":
         else:
             st.info("⚠️ No approved records for this week")
 
-    # Charts Section
     if not df.empty:
         st.subheader("📈 Sales Charts")
         categories = ["vape", "international", "australian", "non_tobacco"]
