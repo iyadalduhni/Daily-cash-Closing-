@@ -76,6 +76,8 @@ if "logged_in" not in st.session_state:
     st.session_state.page = None
     st.session_state.sales_data = {}
     st.session_state.summary_data = {}
+    st.session_state.show_add_user = False
+    st.session_state.selected_date = None
 
 # =========================
 # Login Page
@@ -161,7 +163,6 @@ elif st.session_state.role == "employee":
                   net_sales, system_sales, difference))
             conn.commit()
 
-            # حفظ بيانات الملخص في session
             st.session_state.summary_data = {
                 "cash_left_yesterday": cash_left_yesterday,
                 "cash_left_today": cash_left_total,
@@ -194,24 +195,49 @@ elif st.session_state.role == "employee":
 elif st.session_state.role == "manager":
     st.title("📊 Manager Dashboard")
 
-    # إدارة المستخدمين
-    st.subheader("👥 Manage Users")
-    new_username = st.text_input("New Username")
-    new_password = st.text_input("New Password", type="password")
-    role = st.selectbox("Role", ["employee", "manager"])
-    if st.button("Add User"):
-        if add_user(new_username, new_password, role):
-            st.success(f"User {new_username} added successfully!")
-        else:
-            st.error("⚠️ Username already exists")
+    # =========================
+    # Add User Section (toggle)
+    # =========================
+    if st.button("➕ Add User"):
+        st.session_state.show_add_user = not st.session_state.show_add_user
 
-    # عرض جميع البيانات
-    st.subheader("📑 Daily Records")
-    df = pd.read_sql("SELECT * FROM daily_sales ORDER BY id DESC", conn)
-    st.dataframe(df)
+    if st.session_state.show_add_user:
+        st.subheader("👥 Add New User")
+        new_username = st.text_input("New Username")
+        new_password = st.text_input("New Password", type="password")
+        role = st.selectbox("Role", ["employee", "manager"])
+        if st.button("Save User"):
+            if add_user(new_username, new_password, role):
+                st.success(f"User {new_username} added successfully!")
+                st.session_state.show_add_user = False
+            else:
+                st.error("⚠️ Username already exists")
 
     # =========================
-    # 📊 Charts Section
+    # Daily Records Section
+    # =========================
+    st.subheader("📑 Daily Records")
+    df = pd.read_sql("SELECT * FROM daily_sales ORDER BY id DESC", conn)
+
+    if not df.empty:
+        # إضافة اليوم بجانب التاريخ
+        df["day_name"] = pd.to_datetime(df["date"]).dt.strftime("%A")
+
+        # عرض فقط التاريخ + اليوم + الاجمالي
+        summary_df = df[["date", "day_name", "total"]]
+
+        for _, row in summary_df.iterrows():
+            if st.button(f"{row['date']} ({row['day_name']}) - Total: {row['total']}$"):
+                st.session_state.selected_date = row['date']
+
+        # صفحة تفاصيل اليوم
+        if st.session_state.selected_date:
+            st.subheader(f"📅 Details for {st.session_state.selected_date}")
+            details = df[df["date"] == st.session_state.selected_date]
+            st.dataframe(details)
+
+    # =========================
+    # Charts Section
     # =========================
     if not df.empty:
         st.subheader("📈 Sales Charts")
