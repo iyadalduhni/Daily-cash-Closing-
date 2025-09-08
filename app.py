@@ -244,7 +244,13 @@ elif st.session_state.role == "manager":
 
         # تقرير الساعات الأسبوعية
         st.subheader("📊 Weekly Hours Report")
-        weekly_hours = df[(df["week"] == current_week) & (df["year"] == current_year) & (df["status"] == "Approved")]
+        df["week"] = df["date"].dt.isocalendar().week
+        df["year"] = df["date"].dt.isocalendar().year
+
+        weekly_hours = df[(df["week"] == current_week) & 
+                          (df["year"] == current_year) & 
+                          (df["status"] == "Approved")]
+
         if not weekly_hours.empty:
             report = weekly_hours.groupby("employee_name")["hours"].sum().reset_index()
             report.columns = ["Employee", "Total Hours"]
