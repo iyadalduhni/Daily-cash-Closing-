@@ -3,11 +3,16 @@ import datetime
 import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
+import shutil
+import os
 
 # =========================
 # Database Setup
 # =========================
-conn = sqlite3.connect("sales.db")
+DB_FILE = "sales.db"
+BACKUP_FILE = "sales_backup.db"
+
+conn = sqlite3.connect(DB_FILE)
 c = conn.cursor()
 
 # جدول المبيعات اليومية
@@ -188,7 +193,9 @@ elif st.session_state.role == "employee":
 elif st.session_state.role == "manager":
     st.title("📊 Manager Dashboard")
 
-    # زر Reset Database مع تأكيد
+    # =========================
+    # Admin Tools
+    # =========================
     st.subheader("⚠️ Admin Tools")
     with st.expander("🔄 Reset Database"):
         st.warning("⚠️ This will delete ALL data and reset the database. This action cannot be undone.")
@@ -242,7 +249,32 @@ elif st.session_state.role == "manager":
             else:
                 st.error("❌ You must type RESET to confirm.")
 
-    # إضافة مستخدم جديد
+    # =========================
+    # Backup & Restore
+    # =========================
+    st.subheader("💾 Backup & Restore")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("📤 Backup Database"):
+            if os.path.exists(DB_FILE):
+                shutil.copy(DB_FILE, BACKUP_FILE)
+                st.success("✅ Backup created successfully (sales_backup.db)")
+            else:
+                st.error("⚠️ No database file found!")
+
+    with col2:
+        if st.button("📥 Restore Backup"):
+            if os.path.exists(BACKUP_FILE):
+                shutil.copy(BACKUP_FILE, DB_FILE)
+                st.success("✅ Database restored successfully from backup!")
+                st.warning("⚠️ Please refresh the app to reload data.")
+            else:
+                st.error("⚠️ No backup file found!")
+
+    # =========================
+    # Add User
+    # =========================
     if st.button("➕ Add User"):
         st.session_state.show_add_user = not st.session_state.show_add_user
 
@@ -258,7 +290,9 @@ elif st.session_state.role == "manager":
             else:
                 st.error("⚠️ Username already exists")
 
+    # =========================
     # Daily Records
+    # =========================
     st.subheader("📑 Daily Records")
     df = pd.read_sql("SELECT * FROM daily_sales ORDER BY id DESC", conn)
 
