@@ -1,22 +1,28 @@
 import streamlit as st
-import datetime
 import sqlite3
 import pandas as pd
-import matplotlib.pyplot as plt
-import shutil
+import datetime
 import os
+import shutil
 
-# =========================
-# Database Setup
-# =========================
+# ========== Database Setup ==========
 DB_FILE = "sales.db"
 BACKUP_FILE = "sales_backup.db"
 
-conn = sqlite3.connect(DB_FILE)
+conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 c = conn.cursor()
 
-# جدول المبيعات اليومية
-c.execute('''CREATE TABLE IF NOT EXISTS daily_sales (
+c.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT,
+    role TEXT
+)
+""")
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS daily_sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT,
     vape REAL,
@@ -31,7 +37,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS daily_sales (
     eftpos_main REAL,
     eftpos_backup REAL,
     expenses REAL,
-    expenses_desc TEXT,
+    expense_desc TEXT,
     net_sales REAL,
     system_sales REAL,
     difference REAL,
@@ -39,265 +45,155 @@ c.execute('''CREATE TABLE IF NOT EXISTS daily_sales (
     start_time TEXT,
     end_time TEXT,
     hours REAL,
-    status TEXT DEFAULT 'Pending'
-)''')
+    status TEXT
+)
+""")
 
-# جدول المستخدمين
-c.execute('''CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT
-)''')
 conn.commit()
 
-# إضافة مدير افتراضي إذا الجدول فاضي
-c.execute("SELECT COUNT(*) FROM users")
-if c.fetchone()[0] == 0:
-    c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", 
-              ("manager", "admin123", "manager"))
-    conn.commit()
-
-# =========================
-# Helper Functions
-# =========================
-def check_user(username, password):
-    user = c.execute("SELECT role FROM users WHERE username=? AND password=?", 
-                     (username, password)).fetchone()
-    if user:
-        return user[0]
-    return None
+# ========== Helper Functions ==========
+def login_user(username, password):
+    c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
+    return c.fetchone()
 
 def add_user(username, password, role):
     try:
-        c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", 
-                  (username, password, role))
+        c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (username, password, role))
         conn.commit()
         return True
-    except:
+    except sqlite3.IntegrityError:
         return False
 
-# =========================
-# Session State
-# =========================
+# ========== App ==========
+st.set_page_config(page_title="Daily Cash Closing", layout="wide")
+
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.role = None
-    st.session_state.page = None
-    st.session_state.sales_data = {}
-    st.session_state.summary_data = {}
-    st.session_state.show_add_user = False
+    st.session_state.username = None
+    st.session_state.start_time = None
     st.session_state.selected_date = None
     st.session_state.selected_id = None
 
-# =========================
-# Login Page
-# =========================
+# ========== Login ==========
 if not st.session_state.logged_in:
-    st.title("🔑 Login")
+    st.title("🔐 Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        role = check_user(username, password)
-        if role:
+        user = login_user(username, password)
+        if user:
             st.session_state.logged_in = True
-            st.session_state.role = role
-            st.success(f"Welcome {username} ({role})")
+            st.session_state.username = user[1]
+            st.session_state.role = user[3]
+            st.success(f"Welcome {user[1]}! Role: {user[3]}")
         else:
-            st.error("❌ Invalid username or password")
+            st.error("Invalid credentials!")
 
-# =========================
-# Employee Flow
-# =========================
+# ========== Employee Section ==========
 elif st.session_state.role == "employee":
-    if st.session_state.page is None:
-        st.title("📊 Daily Sales Input")
-        date = st.date_input("Date", datetime.date.today())
-        vape = st.number_input("Vape Sales (CG2)", min_value=0.0, step=1.0)
-        international = st.number_input("International Cigarettes (CG1)", min_value=0.0, step=1.0)
-        australian = st.number_input("Australian Cigarettes (TMC+RYO)", min_value=0.0, step=1.0)
-        non_tobacco = st.number_input("Non-Tobacco Sales", min_value=0.0, step=1.0)
-        total_sales = vape + international + australian + non_tobacco
+    st.title("🧾 Cash Closing")
 
-        if st.button("Next →"):
-            st.session_state.sales_data = {
-                "date": date,
-                "vape": vape,
-                "international": international,
-                "australian": australian,
-                "non_tobacco": non_tobacco,
-                "total": total_sales
-            }
-            st.session_state.page = "cash"
+    today = datetime.date.today()
 
-    elif st.session_state.page == "cash":
-        st.title("💵 Cash Closing")
-        employee_name = st.text_input("Employee Name")
-        start_time = st.time_input("Start Time")
-        end_time = st.time_input("End Time")
+    # Start time auto-set once
+    if not st.session_state.start_time:
+        st.session_state.start_time = datetime.datetime.now().time()
 
-        # حساب الساعات
-        hours = (datetime.datetime.combine(datetime.date.today(), end_time) -
-                 datetime.datetime.combine(datetime.date.today(), start_time)).seconds / 3600.0
-        st.write(f"⏱ Total Hours: {hours:.2f}")
+    st.text_input("Employee Name", st.session_state.username, disabled=True)
+    st.text_input("Start Time", str(st.session_state.start_time), disabled=True)
+    end_time = st.time_input("End Time")
 
-        cash_notes = st.number_input("Cash Left (Notes)", min_value=0.0, step=1.0)
-        cash_coins = st.number_input("Cash Left (Coins)", min_value=0.0, step=1.0)
-        safe_notes = st.number_input("Safe (Notes)", min_value=0.0, step=1.0)
-        safe_coins = st.number_input("Safe (Coins)", min_value=0.0, step=1.0)
-        eftpos_main = st.number_input("EFTPOS Main", min_value=0.0, step=1.0)
-        eftpos_backup = st.number_input("EFTPOS Backup", min_value=0.0, step=1.0)
-        expenses = st.number_input("Expenses", min_value=0.0, step=1.0)
-        expenses_desc = st.text_input("Expense Description")
-        system_sales = st.number_input("System Sales (from POS)", min_value=0.0, step=1.0)
+    # Hours calculation
+    hours = (datetime.datetime.combine(today, end_time) -
+             datetime.datetime.combine(today, st.session_state.start_time)).seconds / 3600.0
+    st.write(f"⏱ Total Hours: {hours:.2f}")
 
-        # Cash Left Yesterday
-        last_row = c.execute("SELECT cash_notes, cash_coins FROM daily_sales ORDER BY id DESC LIMIT 1").fetchone()
-        if last_row:
-            cash_left_yesterday = last_row[0] + last_row[1]
-        else:
-            cash_left_yesterday = 0
+    vape = st.number_input("Vape Sales (CG2)", 0.0)
+    international = st.number_input("International Cigarettes (CG1)", 0.0)
+    australian = st.number_input("Australian Cigarettes (TMC+RYO)", 0.0)
+    non_tobacco = st.number_input("Non-Tobacco Sales", 0.0)
+    cash_notes = st.number_input("Cash Left (Notes)", 0.0)
+    cash_coins = st.number_input("Cash Left (Coins)", 0.0)
+    safe_notes = st.number_input("Safe (Notes)", 0.0)
+    safe_coins = st.number_input("Safe (Coins)", 0.0)
+    eftpos_main = st.number_input("EFTPOS Main", 0.0)
+    eftpos_backup = st.number_input("EFTPOS Backup", 0.0)
+    expenses = st.number_input("Expenses", 0.0)
+    expense_desc = st.text_input("Expense Description")
+    system_sales = st.number_input("System Sales (from POS)", 0.0)
 
-        # الحسابات
-        cash_left_total = cash_notes + cash_coins
-        safe_total = safe_notes + safe_coins
-        net_sales = (cash_left_total + safe_total + eftpos_main + eftpos_backup + expenses) - cash_left_yesterday
-        difference = system_sales - net_sales
+    total_sales = vape + international + australian + non_tobacco
+    net_sales = cash_notes + cash_coins + safe_notes + safe_coins + eftpos_main + eftpos_backup - expenses
+    difference = system_sales - net_sales
 
-        if st.button("✅ Confirm & Save"):
-            c.execute('''INSERT INTO daily_sales 
-                (date, vape, international, australian, non_tobacco, total,
-                 cash_notes, cash_coins, safe_notes, safe_coins,
-                 eftpos_main, eftpos_backup, expenses, expenses_desc,
-                 net_sales, system_sales, difference,
-                 employee_name, start_time, end_time, hours, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                 (str(st.session_state.sales_data["date"]), 
-                  st.session_state.sales_data["vape"],
-                  st.session_state.sales_data["international"],
-                  st.session_state.sales_data["australian"],
-                  st.session_state.sales_data["non_tobacco"],
-                  st.session_state.sales_data["total"],
-                  cash_notes, cash_coins, safe_notes, safe_coins,
-                  eftpos_main, eftpos_backup, expenses, expenses_desc,
-                  net_sales, system_sales, difference,
-                  employee_name, str(start_time), str(end_time), hours, "Pending"))
-            conn.commit()
+    if st.button("✅ Confirm & Save"):
+        c.execute("""
+        INSERT INTO daily_sales (
+            date, vape, international, australian, non_tobacco, total,
+            cash_notes, cash_coins, safe_notes, safe_coins,
+            eftpos_main, eftpos_backup, expenses, expense_desc,
+            net_sales, system_sales, difference,
+            employee_name, start_time, end_time, hours, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(today), vape, international, australian, non_tobacco, total_sales,
+            cash_notes, cash_coins, safe_notes, safe_coins,
+            eftpos_main, eftpos_backup, expenses, expense_desc,
+            net_sales, system_sales, difference,
+            st.session_state.username, str(st.session_state.start_time), str(end_time), hours, "Pending"
+        ))
+        conn.commit()
+        st.success("✅ Data saved successfully!")
 
-            st.success("✅ Data saved successfully! Pending Manager Approval")
-            st.session_state.page = None
-
-# =========================
-# Manager Flow
-# =========================
+# ========== Manager Section ==========
 elif st.session_state.role == "manager":
     st.title("📊 Manager Dashboard")
 
-    # =========================
-    # Admin Tools
-    # =========================
+    # Admin tools
     st.subheader("⚠️ Admin Tools")
-    with st.expander("🔄 Reset Database"):
-        st.warning("⚠️ This will delete ALL data and reset the database. This action cannot be undone.")
-        confirm_text = st.text_input("Type RESET to confirm", key="reset_confirm")
+    if st.button("🗑 Reset Database"):
+        conn.close()
+        if os.path.exists(DB_FILE):
+            os.remove(DB_FILE)
+        conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+        c = conn.cursor()
+        st.success("✅ Database has been reset successfully!")
 
-        if st.button("Reset Database"):
-            if confirm_text == "RESET":
-                with conn:
-                    c.execute("DROP TABLE IF EXISTS daily_sales")
-                    c.execute("DROP TABLE IF EXISTS users")
-
-                    # إعادة إنشاء الجداول
-                    c.execute('''CREATE TABLE IF NOT EXISTS daily_sales (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        date TEXT,
-                        vape REAL,
-                        international REAL,
-                        australian REAL,
-                        non_tobacco REAL,
-                        total REAL,
-                        cash_notes REAL,
-                        cash_coins REAL,
-                        safe_notes REAL,
-                        safe_coins REAL,
-                        eftpos_main REAL,
-                        eftpos_backup REAL,
-                        expenses REAL,
-                        expenses_desc TEXT,
-                        net_sales REAL,
-                        system_sales REAL,
-                        difference REAL,
-                        employee_name TEXT,
-                        start_time TEXT,
-                        end_time TEXT,
-                        hours REAL,
-                        status TEXT DEFAULT 'Pending'
-                    )''')
-
-                    c.execute('''CREATE TABLE IF NOT EXISTS users (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        username TEXT UNIQUE,
-                        password TEXT,
-                        role TEXT
-                    )''')
-
-                    # إضافة مدير افتراضي
-                    c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", 
-                              ("manager", "admin123", "manager"))
-
-                st.success("✅ Database has been reset successfully!")
-            else:
-                st.error("❌ You must type RESET to confirm.")
-
-    # =========================
     # Backup & Restore
-    # =========================
     st.subheader("💾 Backup & Restore")
     col1, col2 = st.columns(2)
-
     with col1:
         if st.button("📤 Backup Database"):
             if os.path.exists(DB_FILE):
                 shutil.copy(DB_FILE, BACKUP_FILE)
-                st.success("✅ Backup created successfully (sales_backup.db)")
+                st.success("✅ Backup created successfully")
             else:
                 st.error("⚠️ No database file found!")
-
     with col2:
         if st.button("📥 Restore Backup"):
             if os.path.exists(BACKUP_FILE):
                 shutil.copy(BACKUP_FILE, DB_FILE)
-                st.success("✅ Database restored successfully from backup!")
-                st.warning("⚠️ Please refresh the app to reload data.")
+                st.success("✅ Database restored successfully!")
             else:
                 st.error("⚠️ No backup file found!")
 
-    # =========================
-    # Add User
-    # =========================
+    # Add user
     if st.button("➕ Add User"):
-        st.session_state.show_add_user = not st.session_state.show_add_user
+        with st.form("add_user_form"):
+            new_username = st.text_input("New Username")
+            new_password = st.text_input("New Password")
+            new_role = st.selectbox("Role", ["employee", "manager"])
+            submitted = st.form_submit_button("Add User")
+            if submitted:
+                if add_user(new_username, new_password, new_role):
+                    st.success(f"User {new_username} added successfully!")
+                else:
+                    st.error("⚠️ Username already exists!")
 
-    if st.session_state.show_add_user:
-        st.subheader("👥 Add New User")
-        new_username = st.text_input("New Username")
-        new_password = st.text_input("New Password", type="password")
-        role = st.selectbox("Role", ["employee", "manager"])
-        if st.button("Save User"):
-            if add_user(new_username, new_password, role):
-                st.success(f"User {new_username} added successfully!")
-                st.session_state.show_add_user = False
-            else:
-                st.error("⚠️ Username already exists")
-
-    # =========================
     # Daily Records
-    # =========================
     st.subheader("📑 Daily Records")
     df = pd.read_sql("SELECT * FROM daily_sales ORDER BY id DESC", conn)
-
-    if "status" not in df.columns:
-        df["status"] = "Pending"
 
     if not df.empty:
         df["date"] = pd.to_datetime(df["date"])
@@ -306,12 +202,11 @@ elif st.session_state.role == "manager":
         df["day_name"] = df["date"].dt.strftime("%A")
 
         today = datetime.date.today()
-        current_week = today.isocalendar()[1]
-        current_year = today.isocalendar()[0]
+        current_week = today.isocalendar().week
+        current_year = today.isocalendar().year
 
+        st.write(f"### 📅 Current Week {current_week} ({current_year})")
         current_df = df[(df["week"] == current_week) & (df["year"] == current_year)]
-
-        st.write(f"### Week {current_week} ({current_year})")
 
         if not current_df.empty:
             for _, row in current_df.iterrows():
@@ -322,37 +217,29 @@ elif st.session_state.role == "manager":
         else:
             st.info("⚠️ No records for this week yet")
 
+        # Calendar to view past records
+        st.subheader("📆 View Past Records")
+        selected_date = st.date_input("Select a date to view its week")
+        if selected_date:
+            week_num = selected_date.isocalendar()[1]
+            year_num = selected_date.isocalendar()[0]
+            past_df = df[(df["week"] == week_num) & (df["year"] == year_num)]
+            st.write(f"### Results for Week {week_num} ({year_num})")
+            if not past_df.empty:
+                for _, row in past_df.iterrows():
+                    label = f"{row['date'].date()} ({row['day_name']}) - {row['employee_name']} - {row['hours']:.2f}h - Total: {row['total']}$ - Status: {row['status']}"
+                    if st.button(label, key=f"past_{row['id']}"):
+                        st.session_state.selected_date = str(row['date'].date())
+                        st.session_state.selected_id = row['id']
+            else:
+                st.warning("No records found for that week")
+
+        # Details
         if st.session_state.selected_date:
             st.subheader(f"📅 Details for {st.session_state.selected_date}")
             details = df[df["date"].dt.strftime("%Y-%m-%d") == st.session_state.selected_date]
             st.dataframe(details)
-
             if st.button("✅ Approve This Record"):
                 c.execute("UPDATE daily_sales SET status='Approved' WHERE id=?", (st.session_state.selected_id,))
                 conn.commit()
                 st.success("Record approved successfully!")
-
-        st.subheader("📊 Weekly Hours Report")
-        weekly_hours = df[(df["week"] == current_week) & 
-                          (df["year"] == current_year) & 
-                          (df["status"] == "Approved")]
-
-        if not weekly_hours.empty:
-            report = weekly_hours.groupby("employee_name")["hours"].sum().reset_index()
-            report.columns = ["Employee", "Total Hours"]
-            st.table(report)
-        else:
-            st.info("⚠️ No approved records for this week")
-
-    if not df.empty:
-        st.subheader("📈 Sales Charts")
-        categories = ["vape", "international", "australian", "non_tobacco"]
-        values = [df[c].sum() for c in categories]
-
-        if sum(values) > 0:
-            fig1, ax1 = plt.subplots()
-            ax1.pie(values, labels=categories, autopct='%1.1f%%', startangle=90)
-            ax1.axis('equal')
-            st.pyplot(fig1)
-        else:
-            st.info("⚠️ No sales data available for Pie Chart")
